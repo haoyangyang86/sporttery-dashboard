@@ -12,10 +12,10 @@ CRAWLER_PATH = Path(__file__).resolve().parent / "sporttery_crawler.py"
 
 st.set_page_config(page_title="体彩初终盘智能数据控制台", layout="wide", initial_sidebar_state="expanded")
 
-# --- 全局极客暗黑主题 CSS 注入 ---
+# --- 全局极客暗黑主题 CSS 注入 (含移动端响应式适配) ---
 st.markdown("""
 <style>
-    .stApp { background-color: #0b101e; color: #c0ccda; font-family: 'Inter', sans-serif; }
+    .stApp { background-color: #0b101e; color: #c0ccda; font-family: 'Inter', -apple-system, sans-serif; }
     [data-testid="stSidebar"] { background-color: #121827; border-right: 1px solid #1f2937; }
     header { background-color: transparent !important; }
     h1, h2, h3, h4 { color: #ffffff !important; font-weight: 600; }
@@ -24,7 +24,9 @@ st.markdown("""
     .stRadio p { color: #f8fafc !important; font-size: 15px !important; font-weight: 500 !important; }
     .stDateInput div div input { background-color: #161d30 !important; color: #ffffff !important; border: 1px solid #2d3748 !important; }
 
-    /* 🔥 高保真定制化数据列表 CSS */
+    /* ============================================ */
+    /* 💻 桌面端基础布局 (Desktop Layout)           */
+    /* ============================================ */
     .match-list-container { background-color: #121827; border-radius: 12px; padding: 20px; border: 1px solid #1f2937; margin-bottom: 25px; }
     .match-header { display: flex; color: #8b9bb4; font-size: 13px; padding: 10px 20px; border-bottom: 2px solid #1f2937; margin-bottom: 10px; font-weight: 600; }
     .match-row { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid #1a2235; transition: background-color 0.2s; }
@@ -58,6 +60,74 @@ st.markdown("""
     .ano-pending { color: #f6ad55; background: rgba(246,173,85,0.15); border: 1px solid rgba(246,173,85,0.3); }
     .ano-no-mid { color: #ef4444; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); }
     .ano-no-odds { color: #a855f7; background: rgba(168,85,247,0.15); border: 1px solid rgba(168,85,247,0.3); }
+
+    /* ============================================ */
+    /* 📱 移动端响应式卡片流 (Mobile Card Layout)  */
+    /* ============================================ */
+    @media (max-width: 768px) {
+        /* 隐藏原本挤压在一起的表头 */
+        .match-header { display: none; }
+        
+        /* 移除外边框，让手机屏幕显得更大 */
+        .match-list-container { padding: 5px; background: transparent; border: none; }
+        
+        /* 核心：将横向的行改为 CSS Grid 网格卡片 */
+        .match-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            grid-template-areas:
+                "league time code"
+                "teams teams teams"
+                "results results odds";
+            gap: 12px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background-color: #121827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+        
+        /* 强制覆盖所有的宽度限制 */
+        .col-league, .col-time, .col-code, .col-teams, .col-results, .col-odds, .col-anomaly {
+            width: 100% !important;
+            border-bottom: none !important;
+        }
+        
+        /* 第一排：联赛 / 时间 / 编号 */
+        .col-league { grid-area: league; }
+        .col-time { grid-area: time; padding-left: 8px; font-size: 12px; }
+        .col-code { grid-area: code; justify-content: flex-end; font-size: 13px; }
+        
+        /* 第二排：对阵信息放入一个深色焦点框 */
+        .col-teams {
+            grid-area: teams;
+            background-color: #090e17; /* 更深的底色凸显比分 */
+            padding: 14px 10px;
+            border-radius: 8px;
+            margin: 4px 0;
+        }
+        .team-name { font-size: 14px; white-space: normal; } /* 允许长队名换行 */
+        .team-home { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+        .team-away { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+        .let-pill { margin-left: 0; margin-top: 2px; } /* 让球提示转移到队名下方 */
+        .score-box { min-width: 55px; font-size: 15px; padding: 4px 8px; }
+        
+        /* 第三排：左边红蓝赛果徽章，右边赔率 */
+        .col-results {
+            grid-area: results;
+            flex-direction: row !important; /* 原本上下排的徽章改成左右排 */
+            justify-content: flex-start;
+            align-items: center;
+        }
+        .col-odds {
+            grid-area: odds;
+            justify-content: flex-end;
+            text-align: right;
+            font-size: 12px;
+        }
+        .col-anomaly { grid-area: results; grid-column: 1 / -1; justify-content: flex-start; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
