@@ -6,7 +6,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 # --- 核心配置 ---
-DB_PATH = "sporttery_initial_final_odds.db"
+# 将原来的 "sporttery_initial_final_odds.db" 改为云端专用库
+DB_PATH = "sporttery_cloud_sync.db"
 CRAWLER_PATH = Path(__file__).resolve().parent / "sporttery_crawler.py"
 
 st.set_page_config(page_title="体彩初终盘智能数据控制台", layout="wide", initial_sidebar_state="expanded")
