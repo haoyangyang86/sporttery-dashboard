@@ -1,11 +1,14 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import importlib.util
 from pathlib import Path
 from datetime import datetime, timedelta
 
 # --- 核心配置 ---
 DB_PATH = "sporttery_initial_final_odds.db"
+CRAWLER_PATH = Path(__file__).resolve().parent / "sporttery_crawler.py"
+
 st.set_page_config(page_title="体彩初终盘智能数据控制台", layout="wide", initial_sidebar_state="expanded")
 
 # --- 全局极客暗黑主题 CSS 注入 ---
@@ -57,9 +60,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
+# --- 数据库连接 (带并发超时锁机制) ---
 def get_db_connection():
-    # 云端只读模式，设置 timeout 防治并发拥堵
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -67,8 +69,7 @@ def get_db_connection():
 @st.cache_data(ttl=60)
 def fetch_dashboard_metrics():
     total_base, start, end, total_complete = 0, "无", "无", 0
-    if not Path(DB_PATH).exists():
-        return total_base, start, end, total_complete
+    if not Path(DB_PATH).exists(): return total_base, start, end, total_complete
     try:
         with get_db_connection() as conn:
             row = conn.execute("SELECT COUNT(*) FROM matches_base").fetchone()
@@ -120,8 +121,7 @@ def fetch_matches_data(start_date=None, end_date=None, limit=None):
     try:
         with get_db_connection() as conn: df = pd.read_sql_query(sql, conn, params=params)
         return sort_matches_by_logical_day(df)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def fetch_detailed_战报_data(days=2):
     if not Path(DB_PATH).exists(): return pd.DataFrame()
@@ -136,8 +136,7 @@ def fetch_detailed_战报_data(days=2):
     try:
         with get_db_connection() as conn: df = pd.read_sql_query(sql, conn, params=[since])
         return sort_matches_by_logical_day(df)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def fetch_anomaly_matches_data():
     if not Path(DB_PATH).exists(): return pd.DataFrame()
@@ -158,8 +157,7 @@ def fetch_anomaly_matches_data():
         df['缺失原因'] = reasons
         df['CSS_CLASS'] = css_classes
         return sort_matches_by_logical_day(df)
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def get_league_style(league_name):
     league = str(league_name).strip()
@@ -221,18 +219,25 @@ def render_html_dashboard_list(df, view_type="basic"):
     html += '</div>'
     return html
 
+def load_crawler_module():
+    if not CRAWLER_PATH.exists(): return None
+    try:
+        spec = importlib.util.spec_from_file_location("sporttery_crawler_runtime", str(CRAWLER_PATH))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except: return None
+
+
 def main():
-    st.sidebar.title("⚡ 智能数据终端 (Web端)")
+    st.sidebar.title("⚡ 智能数据终端")
     page = st.sidebar.radio("核心分析视图", [
         "🔥 48H 终盘战报看板",
         "📊 数据核心池概览", 
         "🔍 历史全维度回溯", 
-        "🕳️ 数据断层与异常排查"
+        "🕳️ 数据断层与异常排查",
+        "🛰️ 边缘动态自动爬取"  # <-- 加回来了
     ])
-
-    if not Path(DB_PATH).exists():
-        st.warning(f"⚠️ 尚未连接到底层数据库 ({DB_PATH})。等待数据库同步中...")
-        return
 
     if page == "🔥 48H 终盘战报看板":
         st.title("48H 终盘复盘战报")
@@ -270,13 +275,63 @@ def main():
         html_content = render_html_dashboard_list(anomaly_data, view_type="anomaly")
         st.markdown(html_content, unsafe_allow_html=True)
 
+    elif page == "🛰️ 边缘动态自动爬取":
+        st.title("🛰️ 边缘数据爬取与引擎调度")
+        st.caption("这是用于更新底层数据库的控制中心。")
+        
+        # --- 核心新增：Admin 鉴权锁 ---
+        pwd = st.text_input("🔑 请输入本地管理员秘钥解锁抓取引擎:", type="password")
+        
+        if pwd == "hit2026":  # <-- 这是你的专属解锁密码
+            st.success("身份验证成功！本地数据抓取权限已开放。")
+            st.info(f"当前写入库路径: `{DB_PATH}`")
+            
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                crawl_s = st.date_input("爬取开始日期", datetime.now() - timedelta(days=2))
+            with col_c2:
+                crawl_e = st.date_input("爬取结束日期", datetime.now())
+                
+            col_opt1, col_opt2 = st.columns(2)
+            with col_opt1:
+                inc_mode = st.checkbox("按日期增量更新（跳过已有日期）", value=False)
+            with col_opt2:
+                skip_existing = st.checkbox("跳过数据库中已有详细赔率的比赛", value=True)
+
+            if st.button("启动核心网络抓取引擎", type="primary"):
+                if crawl_s > crawl_e:
+                    st.error("日期区间设置冲突。")
+                else:
+                    crawler = load_crawler_module()
+                    if crawler is None:
+                        st.error(f"未能在同级目录下加载抓取脚本: `{CRAWLER_PATH}`")
+                    else:
+                        with st.spinner("🚀 网络爬虫正在建立高并发会话通道，执行洗数入库，请勿关闭..."):
+                            try:
+                                cfg = crawler.CrawlConfig(
+                                    start_date=str(crawl_s),
+                                    end_date=str(crawl_e),
+                                    db_path=DB_PATH,
+                                    incremental_by_date=inc_mode,
+                                    skip_existing_detail=skip_existing,
+                                )
+                                report = crawler.crawl_to_db(cfg)
+                                st.success("🎉 数据抓取与原子入库全面完成！请运行 git push 同步至云端大屏。")
+                                st.json(report)
+                            except Exception as ex:
+                                st.error(f"数据抓取事务发生意外回滚: {ex}")
+        elif pwd != "":
+            st.error("秘钥错误。云端访客或无授权者仅享有只读浏览权限。")
+        else:
+            st.warning("⚠️ 引擎处于锁定状态。")
+
+
     st.sidebar.divider()
     st.sidebar.markdown("""
     <div style='color: #51637d; font-size: 12px; line-height: 1.6;'>
         <b>📡 终端运行状态：</b><br/>
         • 数据源: 独立持久化 DB 云直连<br/>
-        • 同步机制: Git Webhook 触发式热更<br/>
-        • 读写锁: 仅只读，免除 I/O 风控阻断
+        • 读写分离: Admin 鉴权机制已激活
     </div>
     """, unsafe_allow_html=True)
 
